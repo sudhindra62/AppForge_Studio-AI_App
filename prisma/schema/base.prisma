@@ -1,0 +1,32 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// prisma/schema/base.prisma — Generator & Datasource Configuration
+//
+// ARCHITECTURE NOTE:
+// This file is the root configuration for the Prisma multi-file schema.
+// All other .prisma files in this directory are automatically merged by Prisma.
+//
+// Multi-file schema is GA in Prisma v6.7.0+ — no previewFeatures flag needed.
+// Models defined in any file are globally available across all schema files.
+//
+// Schema directory: prisma/schema/
+// Run commands from project root:
+//   npx prisma migrate dev --name "init"
+//   npx prisma generate
+//   npx prisma studio
+//
+// @see docs/database/DATABASE_ARCHITECTURE.md
+// @see docs/database/ER_DIAGRAM.md
+// ═══════════════════════════════════════════════════════════════════════════════
+
+generator client {
+  provider = "prisma-client-js"
+  // output   = "../node_modules/.prisma/client"  // default output
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // For Neon serverless, use the pooled connection string.
+  // Add ?pgbouncer=true&connection_limit=1 for serverless environments.
+  // Direct URL (for migrations only): directUrl = env("DIRECT_DATABASE_URL")
+}

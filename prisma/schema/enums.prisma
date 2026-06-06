@@ -1,0 +1,145 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// prisma/schema/enums.prisma — All Shared Enumerations
+//
+// ARCHITECTURE NOTE:
+// All enums are centralized here to prevent duplication across schema files.
+// Prisma merges all .prisma files, so models in any file can reference these enums.
+//
+// Naming Convention: PascalCase for enum names, SCREAMING_SNAKE_CASE for values.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── User & Auth Enums ───────────────────────────────────────────────────────
+
+/// User role within the system (global RBAC)
+enum Role {
+  USER        // Standard user — manages their own applications
+  ADMIN       // Platform admin — manages all applications + users
+  SUPER_ADMIN // Full system access including SystemSettings
+}
+
+// ─── Application Enums ───────────────────────────────────────────────────────
+
+/// Lifecycle status of a GeneratedApplication
+enum AppStatus {
+  DRAFT      // Being designed; not yet published
+  ACTIVE     // Live and accessible to end users
+  ARCHIVED   // Soft-deleted; hidden from UI but data preserved
+  DEPRECATED // Marked for deletion; scheduled cleanup
+}
+
+/// Who can access a GeneratedApplication
+enum AppVisibility {
+  PRIVATE // Only the owner can access
+  PUBLIC  // Anyone with the link can access (read-only)
+  SHARED  // Shared with specific collaborators (future feature)
+}
+
+// ─── Field Type Enum ─────────────────────────────────────────────────────────
+
+/// Data types supported by GeneratedField
+enum FieldType {
+  // Text types
+  TEXT        // Short text (varchar)
+  TEXTAREA    // Long text (text)
+  RICH_TEXT   // HTML/Markdown content
+  EMAIL       // Email address with validation
+  URL         // URL with validation
+  PHONE       // Phone number
+
+  // Numeric types
+  NUMBER      // Integer
+  DECIMAL     // Floating point with precision
+  CURRENCY    // Money value (stored as Decimal)
+  PERCENTAGE  // 0-100 range
+
+  // Boolean
+  BOOLEAN     // True/false toggle
+
+  // Date/Time
+  DATE        // Date only (no time)
+  DATETIME    // Date + time
+  TIME        // Time only
+
+  // Selection
+  SELECT      // Single choice from options list
+  MULTI_SELECT // Multiple choices from options list
+
+  // Relations
+  RELATION    // FK reference to another GeneratedEntity
+
+  // Media
+  FILE        // File upload
+  IMAGE       // Image upload
+
+  // Advanced
+  JSON        // Raw JSON object
+  COLOR       // Hex color picker
+  RATING      // Star rating (1-5)
+  FORMULA     // Computed from other fields (future)
+}
+
+// ─── Workflow Enums ───────────────────────────────────────────────────────────
+
+/// What event triggers a GeneratedWorkflow
+enum WorkflowTrigger {
+  ON_CREATE   // Fires when a record is created
+  ON_UPDATE   // Fires when a record is updated
+  ON_DELETE   // Fires when a record is deleted
+  MANUAL      // Triggered manually by user action
+  SCHEDULED   // Runs on a cron schedule
+  ON_IMPORT   // Fires after a CSV import completes
+}
+
+/// Lifecycle status of a GeneratedWorkflow
+enum WorkflowStatus {
+  DRAFT    // Being configured
+  ACTIVE   // Running and processing triggers
+  PAUSED   // Temporarily disabled
+  ARCHIVED // Soft-deleted
+}
+
+// ─── Import Enums ─────────────────────────────────────────────────────────────
+
+/// Stages of a CSVImportJob lifecycle
+enum ImportStatus {
+  PENDING         // Uploaded, waiting to be processed
+  VALIDATING      // Running row-by-row Zod validation
+  PROCESSING      // Inserting rows into the database
+  COMPLETED       // All rows processed successfully
+  FAILED_PARTIAL  // Some rows succeeded, some failed
+  FAILED          // Complete failure (file error, schema mismatch)
+  CANCELLED       // Cancelled by user before completion
+}
+
+// ─── Notification Enums ───────────────────────────────────────────────────────
+
+/// Visual severity of a Notification
+enum NotificationType {
+  INFO    // Informational (blue)
+  SUCCESS // Success (green)
+  WARNING // Warning (yellow)
+  ERROR   // Error (red)
+}
+
+/// Delivery channel for a Notification
+enum NotificationChannel {
+  IN_APP // Shown in the NotificationBell dropdown
+  PUSH   // Sent via Web Push API
+  EMAIL  // Sent via email service
+}
+
+// ─── Audit Enums ──────────────────────────────────────────────────────────────
+
+/// CRUD + system actions tracked by AuditLog
+enum AuditAction {
+  CREATE  // Record created
+  UPDATE  // Record updated
+  DELETE  // Record deleted (soft or hard)
+  RESTORE // Soft-deleted record restored
+  LOGIN   // User logged in
+  LOGOUT  // User logged out
+  EXPORT  // Data exported (CSV, JSON)
+  IMPORT  // Data imported via CSV
+  PUBLISH // Application published
+  ARCHIVE // Application archived
+}

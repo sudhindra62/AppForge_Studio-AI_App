@@ -1,0 +1,80 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// prisma/schema/workflow.prisma — GeneratedWorkflow
+//
+// ARCHITECTURE NOTE:
+// Workflows define automated actions that run in response to data events.
+// They are the automation engine of AppForge AI.
+//
+// A workflow has:
+//   - trigger: what causes it to fire (ON_CREATE, ON_UPDATE, SCHEDULED, etc.)
+//   - targetEntitySlug: which entity it reacts to
+//   - steps: ordered JSON array of actions to execute
+//   - conditions: JSON rules that must be true for the workflow to run
+//
+// Step types (defined in steps JSON):
+//   - SEND_NOTIFICATION: push/email notification
+//   - SEND_WEBHOOK: HTTP POST to external URL
+//   - UPDATE_FIELD: set field values on the triggering record
+//   - CREATE_RECORD: create a record in another entity
+//   - SEND_EMAIL: send formatted email via email service
+//
+// Soft-delete: WorkflowStatus.ARCHIVED serves as soft delete.
+// deletedAt is also tracked for hard deletion scheduling.
+//
+// @see src/modules/notifications/ for notification dispatch
+// @see docs/modules/MODULES.md
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// An automated workflow that reacts to entity events or schedules.
+/// Executes a sequence of steps when its trigger conditions are met.
+model GeneratedWorkflow {
+  // ── Primary Identity ─────────────────────────────────────────────
+  id            String               @id @default(cuid())
+
+  // ── Ownership ─────────────────────────────────────────────────────
+  applicationId String
+  application   GeneratedApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  // ── Workflow Identity ─────────────────────────────────────────────
+  name          String
+  description   String?  @db.Text
+
+  // ── Trigger Configuration ─────────────────────────────────────────
+  trigger           WorkflowTrigger  // What event fires this workflow
+  targetEntitySlug  String?          // Which entity's events to listen to
+  // Cron expression for SCHEDULED trigger (e.g., "0 9 * * 1" = Monday 9am)
+  cronExpression    String?
+
+  // ── Conditions (JSON Rules Engine) ────────────────────────────────
+  // Evaluated against the triggering record before executing steps.
+  // Example: { "field": "status", "operator": "equals", "value": "published" }
+  conditions    Json    @default("[]")
+
+  // ── Steps (Ordered Action Sequence) ───────────────────────────────
+  // Array of step objects:
+  // [{ type: "SEND_NOTIFICATION", config: { title, body, channel } }, ...]
+  steps         Json    @default("[]")
+
+  // ── Execution Tracking ────────────────────────────────────────────
+  executionCount  Int       @default(0)  // Total times workflow has fired
+  lastExecutedAt  DateTime?              // Timestamp of last execution
+  lastErrorAt     DateTime?              // Timestamp of last failure
+  lastError       String?  @db.Text     // Last error message
+
+  // ── Lifecycle ─────────────────────────────────────────────────────
+  status      WorkflowStatus @default(DRAFT)
+  orderIndex  Int            @default(0) // Display order
+
+  // ── Timestamps & Soft Delete ──────────────────────────────────────
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime? // Soft delete
+
+  // ── Constraints & Indexes ─────────────────────────────────────────
+  @@index([applicationId])
+  @@index([applicationId, status])
+  @@index([trigger])
+  @@index([targetEntitySlug])
+  @@index([deletedAt])
+  @@map("generated_workflows")
+}

@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    background-color: #fcfcfc;
+    color: #1a1a1a;
+  }
+}

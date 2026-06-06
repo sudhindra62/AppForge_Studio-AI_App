@@ -1,0 +1,8 @@
+{
+  "name": "AppForge Studio",
+  "description": "A metadata-driven business application generator that dynamically creates layouts, dashboards, schema integrations, database pipelines, and full-stack forms through simple configuration.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

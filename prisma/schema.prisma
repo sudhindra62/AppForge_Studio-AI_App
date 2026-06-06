@@ -1,0 +1,38 @@
+// ════════════════════════════════════════════════════════════════════════════
+// NOTICE: This file is DEPRECATED.
+//
+// The AppForge AI schema has been migrated to the multi-file schema format
+// supported by Prisma v6.7+ (General Availability, no preview flag needed).
+//
+// Schema files are now located in: prisma/schema/
+//
+//   prisma/schema/base.prisma          ← Generator + Datasource
+//   prisma/schema/enums.prisma         ← All enumerations
+//   prisma/schema/user.prisma          ← User, Account, Session, VerificationToken, PushSubscription
+//   prisma/schema/application.prisma   ← GeneratedApplication, ApplicationConfig
+//   prisma/schema/entity.prisma        ← GeneratedEntity, GeneratedField
+//   prisma/schema/workflow.prisma      ← GeneratedWorkflow
+//   prisma/schema/import.prisma        ← CSVImportJob
+//   prisma/schema/notification.prisma  ← Notification
+//   prisma/schema/i18n.prisma          ← Language
+//   prisma/schema/audit.prisma         ← AuditLog
+//   prisma/schema/system.prisma        ← SystemSettings
+//
+// Prisma CLI configuration (package.json):
+//   "prisma": { "schema": "prisma/schema" }
+//
+// All Prisma commands:
+//   npx prisma generate     --schema=prisma/schema
+//   npx prisma migrate dev  --schema=prisma/schema --name "migration_name"
+//   npx prisma studio       --schema=prisma/schema
+//   npx prisma validate     --schema=prisma/schema
+//
+// Or use the npm scripts:
+//   npm run db:generate
+//   npm run db:migrate
+//   npm run db:studio
+//   npm run db:validate
+//
+// @see docs/database/DATABASE_ARCHITECTURE.md
+// @see docs/database/MIGRATION_STRATEGY.md
+// ════════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,176 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// prisma/schema/entity.prisma — GeneratedEntity & GeneratedField
+//
+// ARCHITECTURE NOTE:
+// These models form the metadata backbone of AppForge AI's rendering engine.
+// The Configuration Engine reads GeneratedEntity + GeneratedField records to
+// produce EntityDefinition objects, which the Rendering Engine uses to generate
+// dynamic forms, tables, and detail views — all without hardcoded UI.
+//
+// GeneratedEntity — represents a data model (like a DB table concept)
+//   e.g., "Product", "Customer", "Order"
+//
+// GeneratedField — represents a column/property on that entity
+//   e.g., "productName" (TEXT), "price" (DECIMAL), "category" (SELECT)
+//
+// Soft-delete strategy:
+//   - GeneratedEntity has deletedAt (can be soft-deleted)
+//   - GeneratedField is hard-deleted (no soft delete — field removal is intentional)
+//
+// Field ordering:
+//   - orderIndex controls display order in forms and tables
+//   - UI updates orderIndex via drag-and-drop reordering
+//
+// Relation fields:
+//   - When type = RELATION, relatedEntityId points to another GeneratedEntity
+//   - relationType describes the cardinality (ONE_TO_MANY, etc.)
+//
+// @see src/engines/rendering/ for UI generation
+// @see src/engines/config/ for metadata parsing
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// A logical data model within a GeneratedApplication.
+/// Conceptually equivalent to a database table, but defined in metadata.
+/// The Rendering Engine uses this to generate CRUD UI for that entity.
+model GeneratedEntity {
+  // ── Primary Identity ─────────────────────────────────────────────
+  id            String               @id @default(cuid())
+
+  // ── Ownership ─────────────────────────────────────────────────────
+  applicationId String
+  application   GeneratedApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  // ── Entity Identity ───────────────────────────────────────────────
+  name          String               // Singular: "Product"
+  pluralName    String               // Plural: "Products"
+  slug          String               // URL-safe: "products"
+  description   String?              @db.Text
+  icon          String?              // Lucide icon name: "package"
+  color         String?              // Hex color for entity badge
+
+  // ── Display Configuration ─────────────────────────────────────────
+  displayField  String?              // Field name used as record label (e.g., "name")
+  orderIndex    Int     @default(0)  // Display order in navigation
+
+  // ── Behavior Flags ────────────────────────────────────────────────
+  isSystem      Boolean @default(false) // True for built-in entities (cannot be deleted)
+  isReadOnly    Boolean @default(false) // True = no create/update/delete UI
+  hasTimestamps Boolean @default(true)  // Auto-add createdAt/updatedAt fields
+  hasSoftDelete Boolean @default(false) // Auto-add deletedAt field
+
+  // ── Permissions Config (entity-level overrides) ────────────────────
+  // { create: Role[], read: Role[], update: Role[], delete: Role[] }
+  permissions   Json    @default("{}")
+
+  // ── List View Config ──────────────────────────────────────────────
+  // { defaultSort: "fieldName", defaultOrder: "asc"|"desc", pageSize: 20 }
+  listConfig    Json?
+
+  // ── Form Config ───────────────────────────────────────────────────
+  // { layout: "single-column"|"two-column", groupFields: [...] }
+  formConfig    Json?
+
+  // ── Record Count Cache ────────────────────────────────────────────
+  // Denormalized count for quick dashboard display (updated on writes)
+  recordCount   Int     @default(0)
+
+  // ── Timestamps & Soft Delete ──────────────────────────────────────
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  deletedAt     DateTime? // Soft delete
+
+  // ── Relations ─────────────────────────────────────────────────────
+  fields               GeneratedField[] @relation("EntityFields")
+  records              GeneratedRecord[] @relation("EntityRecords")
+  // Self-referential: fields that RELATE to this entity from other entities
+  incomingRelations    GeneratedField[] @relation("RelatedEntity")
+
+  // ── Constraints & Indexes ─────────────────────────────────────────
+  @@unique([applicationId, slug])   // slug is unique within an application
+  @@index([applicationId])
+  @@index([applicationId, deletedAt])
+  @@index([orderIndex])
+  @@map("generated_entities")
+}
+
+/// A single field (column/property) belonging to a GeneratedEntity.
+/// Defines data type, validation rules, UI behavior, and display config.
+model GeneratedField {
+  // ── Primary Identity ─────────────────────────────────────────────
+  id        String          @id @default(cuid())
+
+  // ── Ownership ─────────────────────────────────────────────────────
+  entityId  String
+  entity    GeneratedEntity @relation("EntityFields", fields: [entityId], references: [id], onDelete: Cascade)
+
+  // ── Field Identity ────────────────────────────────────────────────
+  name      String          // camelCase programmatic name: "productName"
+  label     String          // Human label: "Product Name"
+  type      FieldType       // Data type (see enums.prisma)
+
+  // ── Constraints ───────────────────────────────────────────────────
+  isRequired    Boolean @default(false)
+  isUnique      Boolean @default(false)
+  isReadOnly    Boolean @default(false) // Cannot be edited after creation
+  isSystem      Boolean @default(false) // Built-in field; cannot be deleted
+  isNullable    Boolean @default(true)  // Whether DB column allows NULL
+
+  // ── Default Value ─────────────────────────────────────────────────
+  // Stored as JSON to support all types: "hello", 42, true, null, {...}
+  defaultValue  Json?
+
+  // ── SELECT / MULTI_SELECT Options ────────────────────────────────
+  // [{ label: "Active", value: "active", color: "#22c55e" }, ...]
+  options       Json?
+
+  // ── Validation Rules ──────────────────────────────────────────────
+  // { min: 0, max: 100, minLength: 2, maxLength: 255, pattern: "^[A-Z]", ... }
+  validation    Json?
+
+  // ── Relation Configuration ────────────────────────────────────────
+  // Only populated when type = RELATION
+  relatedEntityId  String?          // FK → GeneratedEntity.id
+  relatedEntity    GeneratedEntity? @relation("RelatedEntity", fields: [relatedEntityId], references: [id], onDelete: SetNull)
+  relationType     String?          // "ONE_TO_ONE" | "ONE_TO_MANY" | "MANY_TO_MANY"
+  relationLabel    String?          // Display field from related entity
+
+  // ── File/Image Configuration ──────────────────────────────────────
+  // { maxSizeMB: 5, acceptedTypes: ["image/png", "image/jpeg"], multiple: false }
+  fileConfig    Json?
+
+  // ── Display Configuration ─────────────────────────────────────────
+  orderIndex        Int     @default(0)  // Position in form/table
+  columnWidth       Int?                 // Pixel width in table view
+  placeholder       String?              // Input placeholder text
+  helpText          String?  @db.Text   // Helper text shown below field
+  prefix            String?              // Display prefix: "$" for currency
+  suffix            String?              // Display suffix: "kg" for weight
+  format            String?              // Display format: "YYYY-MM-DD"
+
+  // ── Visibility Flags ──────────────────────────────────────────────
+  isHiddenInList    Boolean @default(false) // Excluded from table view
+  isHiddenInForm    Boolean @default(false) // Excluded from create/edit form
+  isHiddenInDetail  Boolean @default(false) // Excluded from detail view
+
+  // ── Behavior Flags ────────────────────────────────────────────────
+  isSearchable      Boolean @default(false) // Included in global search
+  isSortable        Boolean @default(true)  // Column header is sortable
+  isFilterable      Boolean @default(false) // Available in filter panel
+
+  // ── Metadata (catch-all for future field config) ─────────────────
+  metadata     Json?
+
+  // ── Timestamps ────────────────────────────────────────────────────
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  // Note: GeneratedField has NO soft delete — field removal is permanent.
+  // Removing a field is a schema migration, not a soft operation.
+
+  // ── Constraints & Indexes ─────────────────────────────────────────
+  @@unique([entityId, name])       // Field name unique within entity
+  @@index([entityId])
+  @@index([entityId, orderIndex])  // Fast ordered field list query
+  @@index([type])
+  @@index([relatedEntityId])
+  @@map("generated_fields")
+}

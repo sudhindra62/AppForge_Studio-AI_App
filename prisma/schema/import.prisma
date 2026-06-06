@@ -1,0 +1,96 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// prisma/schema/import.prisma — CSVImportJob
+//
+// ARCHITECTURE NOTE:
+// CSVImportJob tracks the complete lifecycle of a CSV data import operation.
+// The import pipeline has 7 distinct status stages (see ImportStatus enum).
+//
+// Design decisions:
+//   - columnMapping stores the user's header→field mapping as JSON
+//   - errorLog stores row-level errors without failing the whole job
+//   - Chunked processing: processedRows is updated in batches for SSE progress
+//   - Partial success: FAILED_PARTIAL status means valid rows were inserted
+//   - File reference: filePath stores the temp path (deleted after completion)
+//
+// Progress streaming:
+//   - Client polls GET /api/import/:jobId with Accept: text/event-stream
+//   - Server reads processedRows from DB and emits SSE events
+//   - Job completion triggers a Notification (via workflow or service)
+//
+// Retention policy:
+//   - Completed/Failed jobs retained for 90 days
+//   - errorLog cleaned after 30 days (only summary kept)
+//   - File uploads deleted immediately after processing
+//
+// @see src/modules/csv/ for the full import pipeline
+// @see docs/modules/MODULES.md#csv-import-module
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// A CSV data import job tracking the bulk import of records into a GeneratedEntity.
+/// Created when a user uploads a CSV file; updated as rows are processed.
+model CSVImportJob {
+  // ── Primary Identity ─────────────────────────────────────────────
+  id            String               @id @default(cuid())
+
+  // ── Ownership ─────────────────────────────────────────────────────
+  userId        String
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // ── Target ────────────────────────────────────────────────────────
+  applicationId String
+  application   GeneratedApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  entitySlug    String               // Which entity is being imported to
+  entityName    String               // Denormalized for display (entity may be renamed later)
+
+  // ── File Information ──────────────────────────────────────────────
+  fileName      String               // Original uploaded filename
+  fileSize      Int                  // Size in bytes
+  filePath      String?              // Temp storage path (null after processing)
+  mimeType      String  @default("text/csv")
+
+  // ── Column Mapping ────────────────────────────────────────────────
+  // Maps CSV headers → entity field names
+  // { "Product Name": "productName", "Price (USD)": "price" }
+  columnMapping Json    @default("{}")
+
+  // ── Progress Tracking ─────────────────────────────────────────────
+  totalRows     Int     @default(0)  // Total rows in the CSV (excluding header)
+  processedRows Int     @default(0)  // Rows attempted so far
+  successRows   Int     @default(0)  // Rows successfully inserted
+  errorRows     Int     @default(0)  // Rows that failed validation/insertion
+  skippedRows   Int     @default(0)  // Rows explicitly skipped (e.g., duplicates)
+
+  // ── Error Log ─────────────────────────────────────────────────────
+  // Array of row-level errors:
+  // [{ rowIndex: 5, field: "price", value: "abc", error: "Expected number" }, ...]
+  errorLog      Json?
+
+  // ── Execution Timing ──────────────────────────────────────────────
+  startedAt     DateTime?            // When processing began
+  completedAt   DateTime?            // When processing finished (success or failure)
+  durationMs    Int?                 // Total processing time in milliseconds
+
+  // ── Configuration ─────────────────────────────────────────────────
+  skipDuplicates   Boolean @default(true)   // Skip rows that violate unique constraints
+  updateExisting   Boolean @default(false)  // Upsert: update if record exists
+  chunkSize        Int     @default(100)    // Rows per batch insert
+
+  // ── Lifecycle ─────────────────────────────────────────────────────
+  status        ImportStatus @default(PENDING)
+  cancelledBy   String?      // userId who cancelled the job
+  cancelledAt   DateTime?
+
+  // ── Timestamps ────────────────────────────────────────────────────
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  // Note: No soft delete on import jobs — they are retained per retention policy then hard deleted
+
+  // ── Constraints & Indexes ─────────────────────────────────────────
+  @@index([userId])
+  @@index([applicationId])
+  @@index([status])
+  @@index([userId, status])
+  @@index([createdAt])
+  @@index([completedAt])
+  @@map("csv_import_jobs")
+}

@@ -1,0 +1,154 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// prisma/schema/user.prisma — User, Account, Session, VerificationToken
+//
+// ARCHITECTURE NOTE:
+// This file owns all identity and authentication models.
+// User is the root tenant entity — all other user-owned data references userId.
+//
+// Multi-tenant strategy: User-scoped (each user is their own tenant).
+//   - All owned models have a userId FK and @@index([userId])
+//   - Repositories enforce userId filtering on every query
+//   - No user can access another user's data through the application layer
+//
+// Soft-delete strategy:
+//   - User has deletedAt: when non-null, account is soft-deleted
+//   - Soft-deleted users cannot log in (enforced in auth service)
+//   - Data is preserved for 30 days before scheduled hard deletion
+//
+// Account, Session, VerificationToken are NextAuth.js required models.
+// Their structure follows the official NextAuth Prisma adapter schema exactly.
+//
+// @see docs/database/DATABASE_ARCHITECTURE.md
+// @see docs/auth/AUTH.md
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Platform user — the root tenant entity for all user-owned data.
+/// Every GeneratedApplication, CSVImportJob, Notification, etc. belongs to a User.
+model User {
+  // ── Primary Identity ─────────────────────────────────────────────
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String?
+  hashedPassword String?   // Null for OAuth-only users
+
+  // ── Profile ──────────────────────────────────────────────────────
+  image          String?   // Avatar URL (from OAuth or upload)
+  bio            String?   @db.Text
+
+  // ── Authorization ─────────────────────────────────────────────────
+  role           Role      @default(USER)
+  isActive       Boolean   @default(true) // false = account suspended
+
+  // ── Email Verification ────────────────────────────────────────────
+  emailVerified  DateTime? // Set by NextAuth on successful verification
+
+  // ── Activity Tracking ─────────────────────────────────────────────
+  lastLoginAt    DateTime?
+  loginCount     Int       @default(0)
+
+  // ── Timestamps ────────────────────────────────────────────────────
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime? // Soft delete: non-null = soft-deleted user
+
+  // ── Relations ─────────────────────────────────────────────────────
+  accounts              Account[]
+  sessions              Session[]
+  applications          GeneratedApplication[]
+  importJobs            CSVImportJob[]
+  notifications         Notification[]
+  auditLogs             AuditLog[]
+  pushSubscriptions     PushSubscription[]
+  settingsUpdated       SystemSettings[]       @relation("UpdatedByUser")
+
+  // ── Constraints & Indexes ─────────────────────────────────────────
+  @@index([email])
+  @@index([role])
+  @@index([isActive])
+  @@index([deletedAt]) // Fast query: WHERE deletedAt IS NULL
+  @@index([createdAt])
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NextAuth.js Required Models
+// These models follow the exact structure required by @auth/prisma-adapter.
+// Do NOT rename fields — NextAuth adapter depends on exact field names.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// OAuth provider account linked to a User.
+/// A User can have multiple Accounts (e.g., Google + GitHub).
+model Account {
+  // ── Primary Key ───────────────────────────────────────────────────
+  id                String  @id @default(cuid())
+
+  // ── Relation ──────────────────────────────────────────────────────
+  userId            String
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // ── Provider Data ─────────────────────────────────────────────────
+  type              String  // "oauth" | "oidc" | "email" | "credentials"
+  provider          String  // "google" | "github" | "credentials"
+  providerAccountId String  // Provider-assigned user ID
+
+  // ── OAuth Tokens ──────────────────────────────────────────────────
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?    // Unix timestamp
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  // ── Constraints & Indexes ─────────────────────────────────────────
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+/// Active user session managed by NextAuth.js
+model Session {
+  // ── Primary Key ───────────────────────────────────────────────────
+  id           String   @id @default(cuid())
+
+  // ── Session Token (stored in HTTP-only cookie) ────────────────────
+  sessionToken String   @unique
+
+  // ── Relation ──────────────────────────────────────────────────────
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // ── Expiry ────────────────────────────────────────────────────────
+  expires      DateTime // Session expiry timestamp
+
+  // ── Indexes ───────────────────────────────────────────────────────
+  @@index([userId])
+  @@index([expires])
+  @@map("sessions")
+}
+
+/// Email verification and password-reset tokens
+model VerificationToken {
+  identifier String   // Email address or user ID
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@index([expires]) // Cleanup query: DELETE WHERE expires < NOW()
+  @@map("verification_tokens")
+}
+
+/// Web Push API subscription for a specific browser/device
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique // Push service endpoint URL
+  p256dh    String            // ECDH public key
+  auth      String            // Auth secret
+  userAgent String?           // Browser/device identifier
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}

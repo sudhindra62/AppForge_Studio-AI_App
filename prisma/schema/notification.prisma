@@ -1,0 +1,80 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// prisma/schema/notification.prisma — Notification
+//
+// ARCHITECTURE NOTE:
+// The Notification model is the persistence layer for the Notification Module.
+// It stores in-app notifications; delivery to Web Push and Email is handled
+// by push-service.ts and email.service.ts respectively.
+//
+// Notification lifecycle:
+//   1. System event occurs (import completes, record created, etc.)
+//   2. NotificationService.create() creates a Notification record
+//   3. If channel includes PUSH → sends via Web Push
+//   4. If channel includes EMAIL → sends via Resend/SES
+//   5. NotificationBell polls/SSE for unread count
+//   6. User opens NotificationList → marks as read
+//
+// Retention: Notifications are kept for 90 days, then hard-deleted by a
+//   scheduled cleanup job. isRead notifications are cleaned after 30 days.
+//
+// Note: PushSubscription model is in user.prisma (belongs with user identity).
+//
+// @see src/modules/notifications/
+// @see docs/modules/MODULES.md#notification-module
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// An in-app notification for a user. May also trigger push/email delivery.
+model Notification {
+  // ── Primary Identity ─────────────────────────────────────────────
+  id        String   @id @default(cuid())
+
+  // ── Recipient ─────────────────────────────────────────────────────
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // ── Content ───────────────────────────────────────────────────────
+  type      NotificationType    @default(INFO)
+  title     String              // Short title: "Import Complete"
+  body      String              @db.Text // Full message body
+  icon      String?             // Optional icon override (Lucide name)
+
+  // ── Delivery Channels ─────────────────────────────────────────────
+  channels  NotificationChannel[] @default([IN_APP])
+
+  // ── Navigation ────────────────────────────────────────────────────
+  actionUrl   String? // URL to navigate to on click
+  actionLabel String? // CTA button label: "View Import"
+
+  // ── Context / Metadata ────────────────────────────────────────────
+  // Contextual data for the notification:
+  // { importJobId: "...", applicationId: "...", entitySlug: "..." }
+  metadata  Json?
+
+  // ── Source Tracking ───────────────────────────────────────────────
+  sourceType String? // What triggered this: "IMPORT_JOB", "WORKFLOW", "SYSTEM"
+  sourceId   String? // ID of the triggering record
+
+  // ── Read State ────────────────────────────────────────────────────
+  isRead    Boolean   @default(false)
+  readAt    DateTime?
+
+  // ── Delivery State ────────────────────────────────────────────────
+  isPushSent  Boolean   @default(false)
+  isEmailSent Boolean   @default(false)
+
+  // ── Expiry ────────────────────────────────────────────────────────
+  expiresAt  DateTime? // After this, hide from UI (for temporary alerts)
+
+  // ── Timestamps ────────────────────────────────────────────────────
+  createdAt  DateTime  @default(now())
+  // Note: No updatedAt — notifications are immutable once created.
+
+  // ── Constraints & Indexes ─────────────────────────────────────────
+  @@index([userId])
+  @@index([userId, isRead])     // Primary query: get unread for user
+  @@index([userId, createdAt])  // Ordered notification list
+  @@index([type])
+  @@index([sourceType, sourceId])
+  @@index([expiresAt])          // Expiry cleanup queries
+  @@map("notifications")
+}

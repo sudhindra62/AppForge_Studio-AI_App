@@ -1,0 +1,99 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// prisma/schema/audit.prisma — AuditLog
+//
+// ARCHITECTURE NOTE:
+// AuditLog is the compliance and debugging trail for all significant actions.
+// It captures WHO did WHAT to WHICH record at WHAT TIME.
+//
+// Design pattern: Polymorphic audit log
+//   - resourceType: string name of the model ("GeneratedApplication", "User", etc.)
+//   - resourceId: the ID of the affected record
+//   - No foreign key constraints on resourceType/resourceId (polymorphic)
+//   - This allows auditing of soft-deleted or later hard-deleted records
+//
+// What gets audited:
+//   - User actions: LOGIN, LOGOUT
+//   - Application lifecycle: CREATE, UPDATE, DELETE, PUBLISH, ARCHIVE
+//   - Entity/Field changes: CREATE, UPDATE, DELETE
+//   - Data operations: IMPORT, EXPORT
+//   - System events captured by AuditRepository.log()
+//
+// What does NOT get audited:
+//   - READ operations (too high volume; use application logs instead)
+//   - Session creation/expiry (handled by NextAuth)
+//   - Notification delivery state changes
+//
+// Immutability:
+//   - AuditLog records are NEVER updated or deleted through the application
+//   - Hard deletion only via scheduled data retention jobs (90+ days)
+//   - No soft delete — audit logs themselves cannot be "un-audited"
+//
+// Performance:
+//   - Write-optimized: inserts are fast (no relations to resolve)
+//   - Read-optimized: compound indexes for common dashboard queries
+//   - Large tables: consider partitioning by month for > 10M records
+//
+// @see src/database/repositories/audit-log.repository.ts
+// @see src/backend/middleware/with-audit.ts (Phase 3+)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Immutable audit trail record for a significant action in the system.
+/// Written on every CREATE, UPDATE, DELETE, LOGIN, EXPORT, IMPORT event.
+model AuditLog {
+  // ── Primary Identity ─────────────────────────────────────────────
+  id         String @id @default(cuid())
+
+  // ── Actor ─────────────────────────────────────────────────────────
+  userId     String?              // Null for system-initiated actions
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userEmail  String?              // Denormalized: preserved if user is deleted
+  userRole   String?              // Denormalized: role at time of action
+
+  // ── Action ────────────────────────────────────────────────────────
+  action     AuditAction          // What happened (see enums.prisma)
+
+  // ── Subject (Polymorphic) ─────────────────────────────────────────
+  resourceType String             // Model name: "GeneratedApplication", "User", etc.
+  resourceId   String             // ID of the affected record
+  resourceName String?            // Human label of the affected record (denormalized)
+
+  // ── Change Data ───────────────────────────────────────────────────
+  // Stored as JSON diffs for UPDATE operations.
+  // For CREATE: newValue has the full created record (sanitized — no passwords).
+  // For DELETE: oldValue has the full deleted record.
+  oldValue   Json?                // Record state before the action
+  newValue   Json?                // Record state after the action
+  // Changed fields only (computed diff for UPDATE):
+  // { field: { old: "Draft", new: "Active" }, ... }
+  changedFields Json?
+
+  // ── Request Context ───────────────────────────────────────────────
+  ipAddress  String?              // Client IP (from X-Forwarded-For header)
+  userAgent  String?  @db.Text   // Full User-Agent string
+  requestId  String?              // Correlation ID (from X-Request-ID header)
+  sessionId  String?              // Session token hash (NOT the full token)
+
+  // ── Additional Context ────────────────────────────────────────────
+  // Extra data specific to the action type:
+  // For IMPORT: { fileName, totalRows, successRows }
+  // For LOGIN: { provider: "google", location: "Mumbai, IN" }
+  metadata   Json?
+
+  // ── Outcome ───────────────────────────────────────────────────────
+  success    Boolean @default(true)  // False for failed/blocked actions
+  errorCode  String?                 // Error code if success=false
+
+  // ── Timestamp ─────────────────────────────────────────────────────
+  // No updatedAt — audit logs are immutable
+  createdAt  DateTime @default(now())
+
+  // ── Constraints & Indexes ─────────────────────────────────────────
+  @@index([userId])
+  @@index([action])
+  @@index([resourceType, resourceId]) // Find all audit events for a specific record
+  @@index([resourceType])
+  @@index([createdAt])                // Time-range queries for audit dashboard
+  @@index([userId, createdAt])        // "What did user X do recently?"
+  @@index([success])                  // Find failed actions
+  @@map("audit_logs")
+}

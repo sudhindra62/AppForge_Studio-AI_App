@@ -1,0 +1,69 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// prisma/schema/system.prisma — SystemSettings
+//
+// ARCHITECTURE NOTE:
+// SystemSettings stores platform-wide key-value configuration.
+// It is the persistence layer for the Configuration Engine.
+//
+// Design pattern: Key-Value store with typed JSON values
+//   - key: namespaced string (e.g., "security.maxLoginAttempts", "email.fromName")
+//   - value: JSON (supports string, number, boolean, array, object)
+//   - category: groups related settings in the admin UI
+//
+// Access control:
+//   - isPublic=true → readable without auth (e.g., app name, public API URL)
+//   - isPublic=false → SUPER_ADMIN only
+//   - isEditable=false → read-only; set by migrations only (not admin UI)
+//
+// Examples of settings stored here:
+//   - "platform.name" → "AppForge AI"
+//   - "platform.logoUrl" → "https://..."
+//   - "security.maxLoginAttempts" → 5
+//   - "security.lockoutDurationMinutes" → 15
+//   - "email.fromName" → "AppForge AI"
+//   - "features.maxApplicationsPerUser" → 10
+//   - "maintenance.isEnabled" → false
+//
+// Seeding: System settings are seeded in seeds/system-settings.seed.ts
+// No soft delete — system settings are either active or inactive via isActive.
+//
+// @see src/config/env.ts for environment variable config
+// @see src/config/feature-flags.ts for module feature flags
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Platform-wide key-value configuration managed by SUPER_ADMINs.
+/// Provides runtime-configurable settings beyond environment variables.
+model SystemSettings {
+  // ── Primary Identity ─────────────────────────────────────────────
+  id          String   @id @default(cuid())
+
+  // ── Key-Value ─────────────────────────────────────────────────────
+  key         String   @unique  // Namespaced: "security.maxLoginAttempts"
+  value       Json              // Type-flexible: string | number | boolean | object | array
+
+  // ── Metadata ──────────────────────────────────────────────────────
+  description String?  @db.Text // Admin-facing description of what this setting does
+  category    String   @default("general") // Grouping: "security" | "email" | "platform" | ...
+  dataType    String   @default("string")  // Expected JSON type: "string" | "number" | "boolean" | "json"
+
+  // ── Access Control ────────────────────────────────────────────────
+  isPublic    Boolean  @default(false) // Can be read by unauthenticated requests
+  isEditable  Boolean  @default(true)  // False = can only be changed via migrations
+
+  // ── Status ────────────────────────────────────────────────────────
+  isActive    Boolean  @default(true)  // Inactive = ignored by the system
+
+  // ── Audit Trail ───────────────────────────────────────────────────
+  updatedBy   String?                  // userId of last editor
+  updatedByUser User?    @relation("UpdatedByUser", fields: [updatedBy], references: [id], onDelete: SetNull)
+
+  // ── Timestamps ────────────────────────────────────────────────────
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // ── Constraints & Indexes ─────────────────────────────────────────
+  @@index([category])
+  @@index([isPublic])
+  @@index([isActive])
+  @@map("system_settings")
+}

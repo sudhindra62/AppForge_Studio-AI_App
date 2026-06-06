@@ -1,0 +1,51 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// prisma/schema/i18n.prisma — Language
+//
+// ARCHITECTURE NOTE:
+// The Language model is the master list of supported locales.
+// It is used by the i18n Module to validate locale codes and provide
+// language selection UI in ApplicationConfig.
+//
+// This model is NOT user-scoped (it's global/shared data).
+// Only SUPER_ADMINs can add/remove languages.
+// Users choose from this list for their ApplicationConfig.supportedLocales.
+//
+// Seeding: Languages are seeded during initial setup (see seeds/).
+// No soft delete — languages are enabled/disabled via isActive flag.
+//
+// @see src/modules/i18n/
+// @see docs/modules/MODULES.md#i18n-module
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// A supported language/locale in the i18n module.
+/// Global shared data — not user-scoped.
+model Language {
+  // ── Primary Identity ─────────────────────────────────────────────
+  id         String   @id @default(cuid())
+
+  // ── Locale Identification ─────────────────────────────────────────
+  code       String   @unique // BCP 47 locale code: "en", "es", "hi", "zh-CN"
+  name       String           // English name: "English", "Spanish", "Hindi"
+  nativeName String           // Native name: "English", "Español", "हिन्दी"
+  flag       String?          // Emoji flag: "🇺🇸", "🇪🇸", "🇮🇳"
+
+  // ── Text Direction ────────────────────────────────────────────────
+  isRTL      Boolean @default(false) // Right-to-left (Arabic, Hebrew, etc.)
+
+  // ── Status ────────────────────────────────────────────────────────
+  isDefault  Boolean @default(false) // Only one language has isDefault=true
+  isActive   Boolean @default(true)  // Inactive = hidden from language selector
+
+  // ── Translation Coverage ──────────────────────────────────────────
+  // Percentage of translation strings that are complete (0-100)
+  coverage   Int     @default(0)
+
+  // ── Timestamps ────────────────────────────────────────────────────
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // ── Constraints & Indexes ─────────────────────────────────────────
+  @@index([isActive])
+  @@index([isDefault])
+  @@map("languages")
+}
