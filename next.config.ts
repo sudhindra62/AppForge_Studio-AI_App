@@ -17,6 +17,7 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  optimizeFonts: false,
   // ── TypeScript & ESLint ──────────────────────────────────────────
   typescript: {
     // In CI, type errors should fail the build
@@ -58,6 +59,7 @@ const nextConfig: NextConfig = {
   // ── Experimental ────────────────────────────────────────────────
   experimental: {
     // serverActions are stable in Next.js 15 — no flag needed
+    optimizeFonts: false,
   },
 };
 
